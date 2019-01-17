@@ -1,0 +1,17 @@
+{
+  "name": "ethereum",
+  "version": "1.0.0",
+  "description": "ethreum private net",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "sandeep",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.18.3",
+    "express": "^4.16.4",
+    "web3": "^1.0.0-beta.37",
+    "web3_extend": "^1.0.0"
+  }
+}
