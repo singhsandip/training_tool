@@ -11,7 +11,7 @@
   "dependencies": {
     "body-parser": "^1.18.3",
     "express": "^4.16.4",
-    "web3": "^1.0.0-beta.37",
-    "web3_extend": "^1.0.0"
+    "safe-compare": "^1.1.3",
+    "web3": "^1.0.0-beta.37"
   }
 }

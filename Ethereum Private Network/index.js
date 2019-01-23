@@ -1,9 +1,13 @@
+var safeCompare = require('safe-compare');
+
 var Web3 = require('web3');
 let express = require('express');
 const bodyParser = require('body-parser');
 
-var Personal = require('web3-eth-personal');
+/*var Personal = require('web3-eth-personal');
 var personal = new Personal("http://localhost:8101");
+*/
+// console.log('personl ',personal);
 
 var Net = require('web3-net');
 var net = new Net("http://localhost:8101");
@@ -22,6 +26,37 @@ if (typeof web3 !== 'undefined') {
   web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8101"));
 }
 
+
+var fromBlock = 0;
+var lastBlock = 0;
+
+
+web3.extend({
+	property: 'personal',
+    methods: [{
+        name: 'listWallets',
+        call: 'personal_listWallets',
+		params: 0
+    },{
+    	name: 'newAccount',
+        call: 'personal_newAccount',
+        params: 1
+    },{
+    	name: 'listAccounts',
+        call: 'personal_listAccounts',
+        params: 0
+    },{
+	    name: 'unlockAccount',
+	    call: 'personal_unlockAccount',
+	    params: 2	
+    },{
+	    name: 'lockAccount',
+	    call: 'personal_lockAccount',
+	    params: 1	
+    }]
+});
+
+
 web3.extend({
 	property: 'miner',
     methods: [{
@@ -32,8 +67,7 @@ web3.extend({
 	{
 		name: 'stop',
         call: 'miner_stop',
-	}
-    ]
+	}]
 });
 
 web3.extend({
@@ -46,36 +80,70 @@ web3.extend({
     	name: 'addPeer',
         call: 'admin_addPeer',
         params: 1
+    },{
+    	name: 'nodeInfo',
+        call: 'admin_nodeInfo',
+        params: 0
+    },{
+ 		name: 'datadir',
+        call: 'admin_datadir',
+        params: 0
     }
     ]
 });
 
-
 //done
 app.post('/createAccount' , (req,res) => {
 	const { password } = req.body;
-	personal.newAccount(password)
+	var finalResult = {
+		"data" : null
+	}
+	web3.personal.newAccount(password)
 	.then(result => {
-		var finalResult = {
-				"data" : result
-			}
+		finalResult.data = result;
 		res.send(finalResult);
+	})
+	.catch(err =>{
+		finalResult.data = null;
+		result.send(finalResult);
 	})
 });
 
 //done
 app.get('/getAccountList', (req, res) => {
+	var finalResult = {
+		"data" : null
+	}
+
 	web3.eth.getAccounts()
-		.then(result => {
-			var finalResult = {
-				"data" : result
-			}
+	.then(result => {
+		finalResult.data = result;
 		res.send(finalResult);
-	});	
+	})
+	.catch(err => {
+		finalResult.data = null;
+		res.send(finalResult);
+	})
 });
 
 //done
-app.get('/getBlocks', (req, res) => {
+app.get('/getWalletList', (req, res) => {
+	var finalResult = {
+		"data" : null
+	}
+
+	web3.personal.listWallets()
+	.then(result => {
+		finalResult.data = result;
+		res.send(finalResult);
+	})
+	.catch(err => {
+		res.send(finalResult);
+	})
+})
+
+//done
+app.get('/getBlockNumber', (req, res) => {
 	web3.eth.getBlockNumber()
 	.then(result =>{
 		var finalResult = { 
@@ -97,7 +165,6 @@ app.post('/getBalance', (req, res) => {
 	})	
 });
 
-
 //done
 app.get('/getGasPrice', (req, res) => {
 	web3.eth.getGasPrice()
@@ -108,7 +175,6 @@ app.get('/getGasPrice', (req, res) => {
 	res.send(finalResult);
 	})	
 });
-
 
 //done
 app.get('/getHashRate', (req,res) => {
@@ -126,7 +192,7 @@ app.get('/getHashRate', (req,res) => {
 app.post('/send', (req, res) => {
 	const {password, from, to, amount } = req.body;
 
-	personal.unlockAccount(from, password)
+	web3.personal.unlockAccount(from, password)
 	.then(result =>{
 		return result;
 	})
@@ -158,9 +224,19 @@ app.post('/send', (req, res) => {
 //done
 app.post('/getTransaction',(req,res) => {
 	const { thash } = req.body;
+
+	var finalResult = {
+		"data" : null
+	}
+
 	web3.eth.getTransaction(thash)
 	.then(result=> {
-		res.send(result);
+		finalResult.data = result;
+		res.send(finalResult);
+	})
+	.catch(err =>{
+		res.send(finalResult);
+
 	})	
 });
 
@@ -208,110 +284,173 @@ app.get('/getPendingTransactions', (req, res) => {
 });
 
 
-//partially done
-app.post('/getMyTransactions', (req,res) => {
+app.get('/local_ip',(req,res)=>{
+    var os = require('os');
+    var interfaces = os.networkInterfaces();
+    var addresses = [];
+    for (var k in interfaces) {
+        for (var k2 in interfaces[k]) {
+            var address = interfaces[k][k2];
+            if (address.family === 'IPv4' && !address.internal) {
+                addresses.push(address.address);
+            }
+        }
+    }
+    res.send({ip:addresses[0]});
+})
 
+//variables for getting all and mytransactions
+var txs = [];
+var txsList = [];
+
+//done
+app.post('/getMyTransactions', (req,res) => {
 	const { address } = req.body;
 
+	txs.length = 0;
+
 	web3.eth.getBlockNumber()
-	.then(blockNumber =>{
-		console.log(blockNumber);
-		return blockNumber;
+	.then(blockNumber => {
+		if (blockNumber > 0) {
+			getAllTransactionsForMyTransations(0,blockNumber,address,res);
+		}else{
+			var finalResult = {
+				"data" : null
+			}
+
+		res.send(finalResult);
+		}
 	})
-	.then(blockNumber =>{
-		var txs = [];
-		for(var i = 0; i < blockNumber; i++) {
-			const val = i;
-	    		web3.eth.getBlock(val, true)
-	    		.then(result =>{
+})
 
-	    			var length = result.transactions.length;
 
-	    			if (length > 0) {
-						for(var j = 0; j < length; j++) {
-						    const valTwo = j;
-						    console.log(result.transactions[valTwo]);
-						      if(result.transactions[valTwo].from == address || result.transactions[valTwo].to == address){
-									txs.push(result.transactions[valTwo]);
-							}
-	   				 	}		 	
-		    		if (val == blockNumber - 1) {
-		    			console.log(val);
-							var finalResult = {
-								"data" : txs
-							}
-						// res.send(finalResult);
-					}	
-	    			}else{
-					    if (val == blockNumber - 1) {
-					    	console.log(val);
-								var finalResult = {
-											"data" : txs
-								}
-									// res.send(finalResult);
-							}	
-					}	
-	    		});
-    		
-    			
+function getAllTransactionsForMyTransations(currentBlock,lastBlock,address,res){
+	if (currentBlock > lastBlock ) {
+		txsList.length = 0;
+
+		getTransactionForMyList(txs,0,address,res);
+
+	}else{
+		web3.eth.getBlock(currentBlock)
+		.then(result =>{
+			let length = result.transactions.length;
+
+			if (length > 0) {
+				for(let j = 0; j < length; j++) {
+					txs.push(result.transactions[j]);
+				 }
+	   		}
+
+	   		currentBlock++;
+
+	   		getAllTransactionsForMyTransations(currentBlock,lastBlock,res,address);
+
+		})
+	}
+}
+
+
+function getTransactionForMyList(txs,count,address,res){
+	if (count == txs.length) {
+		var finalResult = {
+			"data" : txsList
 		}
 
-		setTimeout(()=>{
-			res.send({data:txs});
+	res.send(finalResult);	
+	}else{
+		
+		web3.eth.getTransaction(txs[count])
+		.then(result => {
+			console.log('my address ',address);
+			console.log('from ', result.from);
+			console.log('to ',result.to);;
+			/*if (result.from == address || result.to == address) {
+				txsList.push(result);
+			}*/
+			if(safeCompare(result.from,address || result.to,address)){
+				console.log("present")
+				txsList.push(result);
+			}else{
+				console.log("not present");
+			}
+			
+			count++;
 
-		},1000)
-	})
-});
+			getTransactionForMyList(txs,count,address,res);
+		})
+	}
+
+}
 
 
-//partially done
+//done
 app.get('/getAllTransactions', (req,res) => {
 
+	txs.length = 0;
+
 	web3.eth.getBlockNumber()
-	.then(blockNumber =>{
-		console.log(blockNumber);
-		return blockNumber;
-	})
-	.then(blockNumber =>{
-		var txs = [];
-		for(let i = 0; i < blockNumber; i++) {
-			const val = i;
-	    		web3.eth.getBlock(val, true)
-	    		.then(result =>{
+	.then(result => {
+		if (result > 0) {
 
-	    			let length = result.transactions.length;
+			getAllTransactions(0,result,res);
 
-	    			if (length > 0) {
-						for(let j = 0; j < length; j++) {
-						    const valTwo = j;
-						     txs.push(result.transactions[valTwo]);
-	   				 	}		 	
-		    		if (val == blockNumber - 1) {
-		    			console.log(val);
-							var finalResult = {
-								"data" : txs
-							}
-						// res.send(finalResult);
-					}	
-	    			}else{
-					    if (val == blockNumber - 1) {
-					    	console.log(val);
-								var finalResult = {
-											"data" : txs
-								}
-							// res.send(finalResult);
-						}	
-					}	
-	    		});
-    		
-    			
+		}else{
+			var finalResult = {
+			"data" : null
 		}
-		setTimeout(()=>{
-			res.send({data:txs});
 
-		},1000)
+		res.send(finalResult);	
+		}
 	})
-});
+})
+
+
+function getAllTransactions(currentBlock,lastBlock,res) {
+	if (currentBlock > lastBlock ) {
+		txsList.length = 0;
+
+		getTransactionFromList(txs,0,res);
+
+	}else{
+		web3.eth.getBlock(currentBlock)
+		.then(result =>{
+			let length = result.transactions.length;
+
+			if (length > 0) {
+				for(let j = 0; j < length; j++) {
+				     txs.push(result.transactions[j]);
+				 }
+	   		}
+
+	   		currentBlock++;
+
+	   		getAllTransactions(currentBlock,lastBlock,res);
+
+		})
+	}
+}
+
+
+
+function getTransactionFromList(txs,count,res){
+	if (count == txs.length) {
+		var finalResult = {
+			"data" : txsList
+		}
+
+	res.send(finalResult);	
+	}else{
+		web3.eth.getTransaction(txs[count])
+		.then(result => {
+			txsList.push(result);
+
+			count++;
+
+			getTransactionFromList(txs,count,res);
+		})
+	}
+
+}
 
 //done
 app.get('/getPeers', (req,res) => {
@@ -338,42 +477,272 @@ app.get('/getPeersCount',(req,res) => {
 app.post('/addPeer', (req, res) => {
 	const { enode } = req.body;
 
-	web3.admin.addPeer(enode,(err,data)=>{
-			var finalResult = {
-							"data" : data
-						}
+	var finalResult = {
+		"data" : null
+	}
+
+	web3.admin.addPeer(enode,(err,data) => {
+		if (err) {
+			finalResult.data = false;
 			res.send(finalResult);
-		});
+		}else{
+			finalResult.data = true;
+			res.send(finalResult);
+		}
+	})
 });
 
 //done
 app.post('/startMining', (req,res) => {
 	const { threads } = req.body;
 
-	web3.miner.start(threads,(err,data)=>{
-		var finalResult = {
+			web3.eth.getBlockNumber()
+			.then(result => {
+			fromBlock = result;
+			console.log('fromBlock',fromBlock);
+			web3.miner.start(threads,(err,data)=>{
+			var finalResult = {
 				"data" : data
-		}
-		res.send(finalResult);
-	});
-
+			}
+			res.send(finalResult);
+		});
+	})
 });
+
+
+//get mined blocks when mining started
+app.post('/getMinedBlock', (req,res) => {
+	const { blockNumber } = req.body;
+
+	web3.eth.getBlock(blockNumber)
+	.then(result => {
+		var finalResult = {
+				"data" : result
+			}
+		res.send(finalResult);
+	})
+});
+
 
 
 //done
 app.get('/stopMining', (req,res) => {
 	const { threads } = req.body;
 
-	web3.miner.stop((err,data)=>{
+		web3.eth.getBlockNumber()
+		.then(result =>{
+			lastBlock = result;
+			console.log(lastBlock);
+
+			web3.miner.stop((err,data)=>{
+			var finalResult = {
+				"data" : data
+			}
+			res.send(finalResult);
+		});
+	})
+});
+
+
+//get node id(done)
+app.get('/getNodeId', (req,res) => {
+	web3.admin.nodeInfo((err,data) =>{
+		if (data) {
+			var finalResult = {
+				"data" : data.id
+			}
+			res.send(finalResult);
+		}
+	});
+});
+
+//get genesis(done)
+app.get('/getGenesis', (req,res) => {
+	web3.admin.nodeInfo((err,data) =>{
+			if (data) {
+				// console.log(data);
+				var finalResult = {
+					"data" : data.protocols.eth.genesis
+				}
+			res.send(finalResult);
+		}
+	});
+});
+
+//get data dir(done)
+app.get('/getDatadir', (req,res) => {
+	web3.admin.datadir((err,data) =>{
+			if (data) {
+				var finalResult = {
+					"data" : data
+				}
+
+			res.send(finalResult);
+		}
+	});
+});
+
+
+//get enode(done)
+app.get('/getEnode', (req,res) => {
+	web3.admin.nodeInfo((err,data) =>{
+			if (data) {
+			var finalResult = {
+				"data" : data.enode
+			}
+
+			res.send(finalResult);
+		}
+	});
+});
+
+//get peers id(done)
+app.get('/getPeersId', (req,res) => {
+	web3.admin.getPeers()
+	.then(result =>{
+		console.log('result ',result);
+		return result;
+	})
+	.then(peersList => {
+		if (peersList.length > 0) {
+
+			var ids = [];
+
+			for(let i=0; i<peersList.length; i++){
+				const val = i;
+				ids.push(peersList[i].id);
+
+				if (val == peersList.length - 1) {
+					var finalResult = {
+						"data" : ids
+					}
+
+					res.send(finalResult);
+				}
+			}
+
+		}
+	});
+});
+
+//unlock account(done)
+app.post('/unlockAccount',(req,res) => {
+	const { address, password } = req.body;
+
+	web3.personal.unlockAccount(address,password)
+	.then(result =>{
 		var finalResult = {
-			"data" : data
+			"data" : result
 		}
 		res.send(finalResult);
-	});
-
+	})
+	.catch(err =>{
+		var finalResult = {
+			"data" : null
+		}
+		res.send(finalResult);
+	})
 });
+
+
+//lock account(done)
+app.post('/lockAccount',(req,res) => {
+	const { address } = req.body;
+
+	web3.personal.lockAccount(address)
+	.then(result =>{
+		var finalResult = {
+			"data" : result
+		}
+		res.send(finalResult);
+	})
+	.catch(err =>{
+		console.log(err);
+		var finalResult = {
+			"data" : null
+		}
+		res.send(finalResult);
+	})
+});
+
+var myminedblocks = [];
+
+//get my mined blocks by user
+app.post('/getMyMinedBlocks',(req,res) => {
+		myminedblocks.length = 0;
+		const { mineraddress } = req.body;
+
+		web3.eth.getBlockNumber()
+		.then(blockNumber =>{
+			console.log(blockNumber);
+			return blockNumber;
+		})
+		.then(blockNumber =>{
+			if (blockNumber > 0) {
+				getMinedBlocks(0,blockNumber,mineraddress,res);
+		}
+	});
+})
+
+
+function getMinedBlocks(blockNumber,lastBlock,mineraddress,res){
+	if (blockNumber > lastBlock) {
+		console.log(blockNumber,' ',lastBlock);
+		var finalResult = {
+			"data" : myminedblocks
+		}
+		res.send(finalResult);
+	}else{
+		web3.eth.getBlock(blockNumber)
+		.then(result =>{
+			if (safeCompare(mineraddress.toUpperCase(),result.miner.toUpperCase())) {
+				myminedblocks.push(result);
+				console.log('equal')
+			}else{
+				console.log('not equal');
+			}
+			blockNumber++;
+
+			getMinedBlocks(blockNumber,lastBlock,mineraddress,res);
+		})
+	}
+}
+
+var blocksMined = 0;
+
+//get my MiningReward
+app.post('/getMyMiningReward', (req,res) => {
+	blocksMined = 0;
+
+	const { mineraddress } = req.body;
+
+	getMyMiningReward(fromBlock,lastBlock,mineraddress,res);
+})
+
+
+
+function getMyMiningReward(fromBlock, lastBlock, mineraddress, res){
+	if (fromBlock > lastBlock) {
+		miningReward = blocksMined * 5;
+			var finalResult = {
+				"data" : miningReward
+							}
+		res.send(finalResult);
+	}else{
+		web3.eth.getBlock(fromBlock)
+		.then(result =>{
+			if (safeCompare(mineraddress.toUpperCase(),result.miner.toUpperCase())) {
+				blocksMined ++;
+			}else{
+				console.log('not equal');
+			}
+
+			fromBlock++;
+			getMyMiningReward(fromBlock,lastBlock,mineraddress,res);
+		})
+	}
+}
 
 app.listen(port, () => {
 	console.log('server started at ', port);
 })
-
