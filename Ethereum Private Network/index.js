@@ -1,7 +1,9 @@
 var safeCompare = require('safe-compare');
 
 var Web3 = require('web3');
+var os = require('os');
 let express = require('express');
+var cors = require('cors')
 const bodyParser = require('body-parser');
 
 /*var Personal = require('web3-eth-personal');
@@ -15,6 +17,7 @@ var net = new Net("http://localhost:8101");
 let app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(cors());
 
 //setup server port
 var port = process.env.PORT || 3000;
@@ -25,7 +28,6 @@ if (typeof web3 !== 'undefined') {
   // set the provider you want from Web3.providers
   web3 = new Web3(new Web3.providers.HttpProvider("http://localhost:8101"));
 }
-
 
 var fromBlock = 0;
 var lastBlock = 0;
@@ -99,144 +101,201 @@ app.post('/createAccount' , (req,res) => {
 		"data" : null
 	}
 	web3.personal.newAccount(password)
-	.then(result => {
-		finalResult.data = result;
-		res.send(finalResult);
+	.then(result =>{
+		onSuccess(result,getEmptyFinalVar(),res);
 	})
 	.catch(err =>{
-		finalResult.data = null;
-		result.send(finalResult);
+		onFailure(getEmptyFinalVar(),res);
 	})
 });
 
 //done
 app.get('/getAccountList', (req, res) => {
-	var finalResult = {
-		"data" : null
-	}
 
 	web3.eth.getAccounts()
-	.then(result => {
-		finalResult.data = result;
-		res.send(finalResult);
+	.then(result =>{
+		onSuccess(result,getEmptyFinalVar(),res);
 	})
-	.catch(err => {
-		finalResult.data = null;
-		res.send(finalResult);
+	.catch(err =>{
+		onFailure(getEmptyFinalVar(),res);
 	})
 });
 
 //done
 app.get('/getWalletList', (req, res) => {
-	var finalResult = {
-		"data" : null
-	}
-
+	
 	web3.personal.listWallets()
-	.then(result => {
-		finalResult.data = result;
-		res.send(finalResult);
+	.then(result =>{
+		onSuccess(result,getEmptyFinalVar(),res);
 	})
-	.catch(err => {
-		res.send(finalResult);
+	.catch(err =>{
+		onFailure(getEmptyFinalVar(),res);
 	})
 })
 
 //done
 app.get('/getBlockNumber', (req, res) => {
+	
 	web3.eth.getBlockNumber()
 	.then(result =>{
-		var finalResult = { 
-	  		"data"  :  result
-		}
-	res.send(finalResult);
-	});
+		onSuccess(result,getEmptyFinalVar(),res);
+	})
+	.catch(err =>{
+		onFailure(getEmptyFinalVar(),res);
+	})
 });
-
+	
 //done
 app.post('/getBalance', (req, res) => {
+	
 	const{ address } = req.body;
-	var result = web3.eth.getBalance(address).
-	then(result =>{
-		var finalResult = { 
-	  	"data"  :  result
-	}
-	res.send(finalResult);
+	
+	web3.eth.getBalance(address)
+	.then(result =>{
+		// console.log(result);
+		result = web3.utils.fromWei(result);
+		result = parseFloat(result).toFixed(8);
+		onSuccess(result,getEmptyFinalVar(),res);
+	})
+	.catch(err =>{
+		onFailure(getEmptyFinalVar(),res);
 	})	
 });
 
 //done
 app.get('/getGasPrice', (req, res) => {
-	web3.eth.getGasPrice()
+	web3.eth.getGasPrice()	
 	.then(result =>{
-		var finalResult = { 
-	  "data"  :  result
-	}
-	res.send(finalResult);
-	})	
+		onSuccess(result,getEmptyFinalVar(),res);
+	})
+	.catch(err =>{
+		onFailure(getEmptyFinalVar(),res);
+	})
 });
 
 //done
 app.get('/getHashRate', (req,res) => {
 	web3.eth.getHashrate()
 	.then(result =>{
-		var finalResult = { 
-	  		"data"  :  result
-		}
-	res.send(finalResult);
+		onSuccess(result,getEmptyFinalVar(),res);
 	})
-	
+	.catch(err => {
+		onFailure(getEmptyFinalVar(),res);
+	})
 });
+
+
+function getEmptyFinalVar(){
+	var finalResult = {
+		"data" : null
+	}
+
+	return finalResult;
+}
+
+function onSuccess(result,finalResult,res){
+	finalResult.data = result;
+	res.send(finalResult);
+}
+
+function onFailure(finalResult,res){
+	res.send(finalResult);
+}
+
+
+var allBlocks = [];
+
+app.get('/getAllBlocks',(req,res) =>{
+
+	allBlocks.length = 0;
+
+	web3.eth.getBlockNumber()
+	.then(blockNumber => {
+		console.log(blockNumber);
+
+		if (blockNumber > 0) {
+			getAllBlocks(1,blockNumber,res);
+		}else{
+			sendEmptyArry();
+		}
+	})
+	.catch(err =>{
+		sendEmptyArry()
+	})
+
+})
+
+
+function getAllBlocks(currentBlock,lastBlock,res){
+	if (currentBlock > lastBlock) {
+		onSuccess(allBlocks,getEmptyFinalVar(),res);
+	}else{
+
+		web3.eth.getBlock(currentBlock)
+		.then(result => {
+
+			allBlocks.push(result);
+
+			currentBlock++;
+			getAllBlocks(currentBlock,lastBlock,res);
+		})
+
+	}
+}
+
 
 //done
 app.post('/send', (req, res) => {
-	const {password, from, to, amount } = req.body;
+	var {from, to, amount } = req.body;
 
-	web3.personal.unlockAccount(from, password)
-	.then(result =>{
-		return result;
-	})
-	.then(isAccountUnlocked =>{
-		if (isAccountUnlocked) {
-				web3.eth.sendTransaction({
-	    			from : from,
-					to : to,
-					value : amount
-			},function(error, hash){
+	amount = web3.utils.toWei(amount,"ether")
+
+	web3.eth.sendTransaction({
+	    	from : from,
+			to : to,
+			value : amount
+			},
+			function(error, hash){
 				if(error)
-					console.log(error);
+					onFailure(getEmptyFinalVar(),res);
 				else{
-					var finalResult = { 
-						  	"data"  :  hash
-						}
-					res.send(finalResult);
-				}
-	    
+					onSuccess(hash,getEmptyFinalVar(),res);
+			}
 		});
-		}
-	})
-	.catch(error =>{
-			console.log(error);
-			// res.send(error);
-	})
 });
+
+app.get('/cpuStats',(req,res)=>{
+    var cpus = os.cpus();
+    var idle = 0;
+    var occupied = 0;
+    for(var i = 0; i<cpus.length;  i++) {
+        for(let j in cpus[i]['times']){
+            switch (j) {
+                case 'idle':
+                    idle+=cpus[i]['times'][j];
+                    break;
+                
+                default:
+                    occupied+=cpus[i]['times'][j];
+                    break;
+            }
+        }
+    }
+    var cpuUsage =((occupied/(occupied+idle))*100).toFixed(2);
+    var memUsage = (((os.totalmem-os.freemem)/os.totalmem)*100).toFixed(2);
+    res.send({cpuUsage,memUsage});
+})
 
 //done
 app.post('/getTransaction',(req,res) => {
 	const { thash } = req.body;
 
-	var finalResult = {
-		"data" : null
-	}
-
 	web3.eth.getTransaction(thash)
-	.then(result=> {
-		finalResult.data = result;
-		res.send(finalResult);
+	.then(result =>{
+		onSuccess(result,getEmptyFinalVar(),res);
 	})
-	.catch(err =>{
-		res.send(finalResult);
-
+	.catch(err => {
+		onFailure(getEmptyFinalVar(),res);
 	})	
 });
 
@@ -259,30 +318,31 @@ app.get('/getPendingTransactions', (req, res) => {
 			.then(result=> {
 				allTransactions.push(result);
 				if (val == length - 1) {
-					var finalResult = {
-						"data" : allTransactions
-					}
-					res.send(finalResult);
+					onSuccess(allTransactions,getEmptyFinalVar(),res);
 				}else{
 					console.log('i = ',val);
 				}
 			})
 			.catch(error =>{
-				console.log('errro in loop ',error);
+				sendEmptyArry(res);
 			})
        	}
         }else{
-        	var finalResult = {
-				"data" : null
-			}
-			res.send(finalResult);
+        	sendEmptyArry(res);
         }		 
 	})
 	.catch(error => {
-		console.log('error ', error);
+		sendEmptyArry(res);
 	})
 });
 
+function sendEmptyArry(res){
+	var finalResult = {
+		"data" : []
+	}
+
+	res.send(finalResult);
+}
 
 app.get('/local_ip',(req,res)=>{
     var os = require('os');
@@ -296,12 +356,70 @@ app.get('/local_ip',(req,res)=>{
             }
         }
     }
-    res.send({ip:addresses[0]});
+    res.send({ip:addresses});
 })
 
 //variables for getting all and mytransactions
 var txs = [];
 var txsList = [];
+
+
+//get
+
+var transactionsFees = 0;
+
+app.post('/getBlockReward',(req,res) => {
+	const { blockNumber } = req.body;
+
+	transactionsFees = 0;
+
+	web3.eth.getBlock(blockNumber)
+	.then(block => {
+		if (block) {
+			if (block.transactions.length > 0) {
+				getTransaction(block.transactions,0,res);
+
+			}else{
+				onSuccess(5,getEmptyFinalVar(),res);
+			}
+		}else{
+			onFailure(getEmptyFinalVar(),res);
+		}
+		
+	})
+	.catch(err => {
+		onFailure(getEmptyFinalVar(),res);
+	})
+
+})
+
+
+
+
+function getTransaction(transactions,current_transactions,res){
+	if (current_transactions == transactions.length) {
+
+		var blockReward = web3.utils.fromWei("5000000000000000000");
+		var transactionsReward = web3.utils.fromWei(String(transactionsFees));
+		 var total = parseFloat(blockReward) + parseFloat(transactionsReward);
+		 console.log('total reward '+total);
+
+		 onSuccess(total,getEmptyFinalVar(),res);
+	}else{
+
+		web3.eth.getTransaction(transactions[current_transactions])
+		.then(transaction => {
+
+			transactionsFees = transactionsFees + transaction.gas * transaction.gasPrice;
+
+			current_transactions++;
+
+			getTransaction(transactions,current_transactions,res);
+		})
+		
+	}
+
+}
 
 //done
 app.post('/getMyTransactions', (req,res) => {
@@ -311,23 +429,25 @@ app.post('/getMyTransactions', (req,res) => {
 
 	web3.eth.getBlockNumber()
 	.then(blockNumber => {
+		console.log('blockNumber ',blockNumber);
 		if (blockNumber > 0) {
 			getAllTransactionsForMyTransations(0,blockNumber,address,res);
 		}else{
-			var finalResult = {
-				"data" : null
-			}
-
-		res.send(finalResult);
+			sendEmptyArry(res);
 		}
+	})
+	.catch(err => {
+		sendEmptyArry(res);
 	})
 })
 
 
 function getAllTransactionsForMyTransations(currentBlock,lastBlock,address,res){
 	if (currentBlock > lastBlock ) {
+		console.log('currentBlock ', currentBlock)
 		txsList.length = 0;
 
+		console.log('transactions ',txs);
 		getTransactionForMyList(txs,0,address,res);
 
 	}else{
@@ -343,8 +463,11 @@ function getAllTransactionsForMyTransations(currentBlock,lastBlock,address,res){
 
 	   		currentBlock++;
 
-	   		getAllTransactionsForMyTransations(currentBlock,lastBlock,res,address);
+	   		getAllTransactionsForMyTransations(currentBlock,lastBlock,address,res);
 
+		})
+		.catch(err =>{
+			onFailure(getEmptyFinalVar(),res);
 		})
 	}
 }
@@ -352,31 +475,22 @@ function getAllTransactionsForMyTransations(currentBlock,lastBlock,address,res){
 
 function getTransactionForMyList(txs,count,address,res){
 	if (count == txs.length) {
-		var finalResult = {
-			"data" : txsList
-		}
-
-	res.send(finalResult);	
+		console.log('final list ',txsList);
+		onSuccess(txsList,getEmptyFinalVar(),res);	
 	}else{
 		
 		web3.eth.getTransaction(txs[count])
 		.then(result => {
-			console.log('my address ',address);
-			console.log('from ', result.from);
-			console.log('to ',result.to);;
-			/*if (result.from == address || result.to == address) {
+			if (result.from == address || result.to == address) {
 				txsList.push(result);
-			}*/
-			if(safeCompare(result.from,address || result.to,address)){
-				console.log("present")
-				txsList.push(result);
-			}else{
-				console.log("not present");
 			}
 			
 			count++;
 
 			getTransactionForMyList(txs,count,address,res);
+		})
+		.catch(err => {
+			onFailure(getEmptyFinalVar(),res);
 		})
 	}
 
@@ -395,12 +509,11 @@ app.get('/getAllTransactions', (req,res) => {
 			getAllTransactions(0,result,res);
 
 		}else{
-			var finalResult = {
-			"data" : null
+			sendEmptyArry(res);
 		}
-
-		res.send(finalResult);	
-		}
+	})
+	.catch(err =>{
+		sendEmptyArry(res);
 	})
 })
 
@@ -434,11 +547,7 @@ function getAllTransactions(currentBlock,lastBlock,res) {
 
 function getTransactionFromList(txs,count,res){
 	if (count == txs.length) {
-		var finalResult = {
-			"data" : txsList
-		}
-
-	res.send(finalResult);	
+		onSuccess(txsList,getEmptyFinalVar(),res);	
 	}else{
 		web3.eth.getTransaction(txs[count])
 		.then(result => {
@@ -455,21 +564,22 @@ function getTransactionFromList(txs,count,res){
 //done
 app.get('/getPeers', (req,res) => {
 	web3.admin.getPeers((err,data)=>{
-		var finalResult = {
-						"data" : data
-					}
-		res.send(finalResult);
+		if (err) {
+			onFailure(getEmptyFinalVar(),res);
+		}else{
+			onSuccess(data,getEmptyFinalVar(),res);
+		}
 	});
 });
 
 //done
 app.get('/getPeersCount',(req,res) => {
 	net.getPeerCount()
-	.then(result => {
-		var finalResult = {
-			"data" : result
-		}
-		res.send(finalResult);
+	.then(result =>{
+		onSuccess(result,getEmptyFinalVar(),res);
+	})
+	.catch(err => {
+		onFailure(getEmptyFinalVar(),res);
 	})
 });
 
@@ -482,12 +592,10 @@ app.post('/addPeer', (req, res) => {
 	}
 
 	web3.admin.addPeer(enode,(err,data) => {
-		if (err) {
-			finalResult.data = false;
-			res.send(finalResult);
+		if (data) {
+			onSuccess(data,getEmptyFinalVar(),res);
 		}else{
-			finalResult.data = true;
-			res.send(finalResult);
+			onFailure(getEmptyFinalVar(),res);
 		}
 	})
 });
@@ -496,15 +604,16 @@ app.post('/addPeer', (req, res) => {
 app.post('/startMining', (req,res) => {
 	const { threads } = req.body;
 
-			web3.eth.getBlockNumber()
-			.then(result => {
+		web3.eth.getBlockNumber()
+		.then(result => {
 			fromBlock = result;
-			console.log('fromBlock',fromBlock);
 			web3.miner.start(threads,(err,data)=>{
-			var finalResult = {
-				"data" : data
-			}
-			res.send(finalResult);
+				console.log(err,data);
+				if (err) {
+					onFailure(getEmptyFinalVar(),res);
+				}else{
+					onSuccess(true,getEmptyFinalVar(),res);
+				}
 		});
 	})
 });
@@ -515,15 +624,13 @@ app.post('/getMinedBlock', (req,res) => {
 	const { blockNumber } = req.body;
 
 	web3.eth.getBlock(blockNumber)
-	.then(result => {
-		var finalResult = {
-				"data" : result
-			}
-		res.send(finalResult);
+	.then(result =>{
+		onSuccess(result,getEmptyFinalVar(),res);
+	})
+	.catch(err => {
+		onFailure(getEmptyFinalVar(),res);
 	})
 });
-
-
 
 //done
 app.get('/stopMining', (req,res) => {
@@ -535,23 +642,22 @@ app.get('/stopMining', (req,res) => {
 			console.log(lastBlock);
 
 			web3.miner.stop((err,data)=>{
-			var finalResult = {
-				"data" : data
+			if (err) {
+				onFailure(getEmptyFinalVar(),res);
+			}else{
+				onSuccess(true,getEmptyFinalVar(),res);
 			}
-			res.send(finalResult);
 		});
 	})
 });
-
 
 //get node id(done)
 app.get('/getNodeId', (req,res) => {
 	web3.admin.nodeInfo((err,data) =>{
 		if (data) {
-			var finalResult = {
-				"data" : data.id
-			}
-			res.send(finalResult);
+			onSuccess(data.id,getEmptyFinalVar(),res);
+		}else{
+			onFailure(getEmptyFinalVar(),res);
 		}
 	});
 });
@@ -559,12 +665,10 @@ app.get('/getNodeId', (req,res) => {
 //get genesis(done)
 app.get('/getGenesis', (req,res) => {
 	web3.admin.nodeInfo((err,data) =>{
-			if (data) {
-				// console.log(data);
-				var finalResult = {
-					"data" : data.protocols.eth.genesis
-				}
-			res.send(finalResult);
+		if (data) {
+			onSuccess(data.protocols.eth.genesis,getEmptyFinalVar(),res);
+		}else{
+			onFailure(getEmptyFinalVar(),res);
 		}
 	});
 });
@@ -572,12 +676,10 @@ app.get('/getGenesis', (req,res) => {
 //get data dir(done)
 app.get('/getDatadir', (req,res) => {
 	web3.admin.datadir((err,data) =>{
-			if (data) {
-				var finalResult = {
-					"data" : data
-				}
-
-			res.send(finalResult);
+		if (data) {
+			onSuccess(data,getEmptyFinalVar(),res);		
+		}else{
+			onFailure(getEmptyFinalVar(),res);
 		}
 	});
 });
@@ -586,12 +688,10 @@ app.get('/getDatadir', (req,res) => {
 //get enode(done)
 app.get('/getEnode', (req,res) => {
 	web3.admin.nodeInfo((err,data) =>{
-			if (data) {
-			var finalResult = {
-				"data" : data.enode
-			}
-
-			res.send(finalResult);
+		if (data) {
+			onSuccess(data.enode,getEmptyFinalVar(),res);
+		}else{
+			onFailure(getEmptyFinalVar(),res);
 		}
 	});
 });
@@ -613,16 +713,17 @@ app.get('/getPeersId', (req,res) => {
 				ids.push(peersList[i].id);
 
 				if (val == peersList.length - 1) {
-					var finalResult = {
-						"data" : ids
-					}
-
-					res.send(finalResult);
+					onSuccess(ids,getEmptyFinalVar(),res);
 				}
 			}
 
+		}else{
+			sendEmptyArry(res);
 		}
-	});
+	})
+	.catch(err =>{
+		sendEmptyArry(res);
+	})
 });
 
 //unlock account(done)
@@ -631,16 +732,10 @@ app.post('/unlockAccount',(req,res) => {
 
 	web3.personal.unlockAccount(address,password)
 	.then(result =>{
-		var finalResult = {
-			"data" : result
-		}
-		res.send(finalResult);
+		onSuccess(result,getEmptyFinalVar(),res);
 	})
-	.catch(err =>{
-		var finalResult = {
-			"data" : null
-		}
-		res.send(finalResult);
+	.catch(err => {
+		onFailure(getEmptyFinalVar(),res);
 	})
 });
 
@@ -651,17 +746,10 @@ app.post('/lockAccount',(req,res) => {
 
 	web3.personal.lockAccount(address)
 	.then(result =>{
-		var finalResult = {
-			"data" : result
-		}
-		res.send(finalResult);
+		onSuccess(result,getEmptyFinalVar(),res);
 	})
-	.catch(err =>{
-		console.log(err);
-		var finalResult = {
-			"data" : null
-		}
-		res.send(finalResult);
+	.catch(err => {
+		onFailure(getEmptyFinalVar(),res);
 	})
 });
 
@@ -680,18 +768,14 @@ app.post('/getMyMinedBlocks',(req,res) => {
 		.then(blockNumber =>{
 			if (blockNumber > 0) {
 				getMinedBlocks(0,blockNumber,mineraddress,res);
-		}
+			}
 	});
 })
 
 
 function getMinedBlocks(blockNumber,lastBlock,mineraddress,res){
 	if (blockNumber > lastBlock) {
-		console.log(blockNumber,' ',lastBlock);
-		var finalResult = {
-			"data" : myminedblocks
-		}
-		res.send(finalResult);
+		onSuccess(myminedblocks,getEmptyFinalVar(),res);
 	}else{
 		web3.eth.getBlock(blockNumber)
 		.then(result =>{
@@ -724,10 +808,7 @@ app.post('/getMyMiningReward', (req,res) => {
 function getMyMiningReward(fromBlock, lastBlock, mineraddress, res){
 	if (fromBlock > lastBlock) {
 		miningReward = blocksMined * 5;
-			var finalResult = {
-				"data" : miningReward
-							}
-		res.send(finalResult);
+		onSuccess(miningReward,getEmptyFinalVar(),res);
 	}else{
 		web3.eth.getBlock(fromBlock)
 		.then(result =>{
@@ -746,3 +827,4 @@ function getMyMiningReward(fromBlock, lastBlock, mineraddress, res){
 app.listen(port, () => {
 	console.log('server started at ', port);
 })
+
